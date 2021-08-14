@@ -236,7 +236,9 @@
             miningChain(unassignedSpirits, myStar, outpost)
         }
         /** ATTACK WITH THE REMAINDER */
-        miningChain(unassignedSpirits, outpostStar, enemy_base)
+        while (unassignedSpirits.length > 0) {
+            miningChain(unassignedSpirits, outpostStar, enemy_base)
+        }
     }
 
 
