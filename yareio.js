@@ -186,12 +186,6 @@
     }
     
     // MACRO FUNCTIONS
-    function prepareAtLocation(unassignedSpirits, loc) {
-        unassignedSpirits.sort((a, b) => 
-        distance(a.position, loc.position) - distance(b.position, loc.position));
-
-    }
-    
     function miningChain(unassignedSpirits, minedStar, targetBase) {
         unassignedSpirits.sort((a, b) => 
         distance(a.position, minedStar.position) - distance(b.position, minedStar.position));
