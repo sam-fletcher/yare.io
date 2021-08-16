@@ -13,19 +13,29 @@
     const marks = {
         HARVESTING: 'H',
         FIGHT: 'F',
+        PREPARE: 'P',
         MYBASE: 'MB',
         OUTPOSTBASE: 'OB',
         ENEMYBASE: 'EB',
+        MYSTAR: 'MS',
+        OUTPOSTSTAR: 'OS',
+        ENEMYSTAR: 'ES'
     };
 
     const myStar = base.position[0] <= outpost.position[0] ? star_zxq : star_a1c;
     const enemyStar = base.position[0] <= outpost.position[0] ? star_a1c : star_zxq;
     const outpostStar = star_p89;
     
-    function getName(baseName) {
-        if (baseName.endsWith(username)) {
+    function getName(id) {
+        if (id == myStar.id) {
+            return marks.MYSTAR
+        } else if (id == enemyStar.id) {
+            return marks.ENEMYSTAR
+        } else if (id == outpostStar.id) {
+            return marks.OUTPOSTSTAR
+        } else if (id.endsWith(username)) {
             return marks.MYBASE
-        } else if (baseName.endsWith(enemyUser)) {
+        } else if (id.endsWith(enemyUser)) {
             return marks.ENEMYBASE
         } else {
             return marks.OUTPOSTBASE
@@ -43,11 +53,10 @@
     }
     function starGrowth(star) {
         // the goal is to let the star keep growing, but as slowly as possible.
-        // TODO: is the mining less efficient than it should be? used to be 0.01
         if (star.energy < 900) {
-            return 3 + Math.floor((star.energy) * 0.01);
+            return 3 + Math.floor((star.energy) * 0.008);
         }
-        return 3 + Math.ceil((star.energy) * 0.01);
+        return 3 + Math.floor((star.energy) * 0.01);
     }
     function sizeReducer(total, spirit) {
         return spirit.size + total;
@@ -58,7 +67,7 @@
             y: offsetPosition[1] - targetPosition[1],
         };
         length = distance(targetPosition, offsetPosition);
-        // normalize vector
+        // get the unit vector
         v.x /= length;
         v.y /= length;
         // increase vector size
@@ -71,7 +80,8 @@
     }
     function findWeighted(sortedArray) {
         if (sortedArray.length) {
-            return sortedArray[Math.floor(Math.pow(Math.random(), 2) * sortedArray.length)];
+            let weight = enemySize + 1
+            return sortedArray[Math.floor(Math.pow(Math.random(), weight) * sortedArray.length)];
         }
     }
     
@@ -79,7 +89,7 @@
     function fight(me, friends) {
         let energizeTarget = undefined;
         let movementPosition = undefined;
-        let cockiness = range;
+        let cockiness = range - speed;
         if (friends.filter((friend) => distance(friend.position, me.position) <= range / 2)
                     .reduce(sizeReducer, me.size) > enemySize &&
                         me.energy >= me.energy_capacity / 2) {
@@ -110,16 +120,21 @@
         let targetStar = myStar;
         me.divide();
 
-        if (markData.length == 3) {
+        if (markData.length == 4) {
             // me.shout('⛏');
             movementPosition = [markData[0], markData[1]]
             if (markData[2].endsWith(marks.OUTPOSTBASE)) {
                 targetBase = outpost;
-                targetStar = outpostStar;
             } else if (markData[2].endsWith(marks.ENEMYBASE)) {
                 targetBase = enemy_base;
-                targetStar = outpostStar;
             }
+            if (markData[3].endsWith(marks.OUTPOSTSTAR)) {
+                targetStar = outpostStar;
+            } else if (markData[3].endsWith(marks.ENEMYSTAR)) {
+                targetStar = enemyStar;
+            }
+        } else {
+            me.shout("markData wrong length")
         }
 
         // find someone in more danger than me that can take energy
@@ -127,6 +142,7 @@
             friends
                 .filter(
                     (friend) =>
+                        friend.sight.enemies.length > 1 &&
                         friend.mark.split(marksSeparator)[0] !== marks.HARVESTING &&
                         friend.energy + me.size <= friend.energy_capacity &&
                         distance(me.position, friend.position) <= 200
@@ -142,8 +158,8 @@
             // get energy from star
             energizeTarget = me;
             // can move after energize towards base (not useful yet)
-            movementPosition = moveBetweenWithOffset(targetStar.position, 
-                                                targetBase.position, range + speed/2);
+            movementPosition = moveBetweenWithOffset(targetStar.position,
+                                     targetBase.position, range + speed/2);
         } else if (distance(me.position, targetBase.position) <= 200) {
             me.shout("b")
             // push energy to base
@@ -170,6 +186,12 @@
     }
     
     // MACRO FUNCTIONS
+    function prepareAtLocation(unassignedSpirits, loc) {
+        unassignedSpirits.sort((a, b) => 
+        distance(a.position, loc.position) - distance(b.position, loc.position));
+
+    }
+    
     function miningChain(unassignedSpirits, minedStar, targetBase) {
         unassignedSpirits.sort((a, b) => 
         distance(a.position, minedStar.position) - distance(b.position, minedStar.position));
@@ -188,14 +210,17 @@
         // there's one additional "virtual" checkpoint next to the star
         const numberInEachCheckpoint = miners.length / (numCheckpoints+1);
         const gapDistance = starDistance / (numCheckpoints+1)
-
+        
         for (let i = 0; i < miners.length; i++) {
-            const distance = Math.floor((i+1) / numberInEachCheckpoint)*gapDistance;
+            // const distance = Math.floor((i+1) / numberInEachCheckpoint)*gapDistance;
+            let distance = Math.max(Math.floor(i / numberInEachCheckpoint) - 1, 0);
+            distance = (distance+1)*gapDistance
             const position = moveBetweenWithOffset(minedStar.position, targetBase.position, distance);
             const baseName = getName(targetBase.id)
+            const starName = getName(minedStar.id)
             // miners[i].shout(baseName)
             miners[i].set_mark(
-`${marks.HARVESTING}${marksSeparator}${position[0]}${marksSeparator}${position[1]}${marksSeparator}${baseName}`);
+`${marks.HARVESTING}${marksSeparator}${position[0]}${marksSeparator}${position[1]}${marksSeparator}${baseName}${marksSeparator}${starName}`);  
         }
         console.log(`${miners.length} ${minedStar.id} miners fueling ${targetBase.id}`)
     }
@@ -221,10 +246,9 @@
             me.set_mark(`${marks.FIGHT}`);
             unassignedSpirits.splice(unassignedSpirits.indexOf(me), 1);
         }
-        console.log(`endangered: ${endangeredSpirits.length}`);
-        
-        if (outpostStar.active_in < 25 && outpost.energy < 700
-            && mySpritsCount > 20 && outpost.control != enemyUser) {
+
+        if (outpost.energy < 700 && outpost.control != enemyUser 
+            && outpostStar.active_in < 25 && mySpritsCount > 20 ) {
             /** DO OUTPOST PROACTIVELY*/
             miningChain(unassignedSpirits, outpostStar, outpost)
         }
@@ -232,12 +256,31 @@
         miningChain(unassignedSpirits, myStar, base)
         
         if (outpost.control == enemyUser) {
-            /** DO OUTPOST DEFENSIVELY */
-            miningChain(unassignedSpirits, myStar, outpost)
+            /** PREPARE TO ATTACK THE OUTPOST */
+            if (unassignedSpirits.length > outpost.energy/10
+                && memory.attack == false) {
+                memory.attack = true
+                memory.attackTime = tick
+            }
+            if (tick > memory.attackTime+30 && memory.attack
+                && unassignedSpirits.length <= outpost.energy/10) {
+                memory.attack = false
+            }
+            console.log(`attack = ${memory.attack}`)
+            if (memory.attack) {
+                while (unassignedSpirits.length > 0) {
+                    miningChain(unassignedSpirits, outpostStar, outpost)
+                }
+            }
+        } else {
+            /** ATTACK WITH THE REMAINDER */
+            while (unassignedSpirits.length > 0) {
+                miningChain(unassignedSpirits, outpostStar, enemy_base)
+            }
         }
-        /** ATTACK WITH THE REMAINDER */
-        while (unassignedSpirits.length > 0) {
-            miningChain(unassignedSpirits, outpostStar, enemy_base)
+        /** DEFAULT HOLDING ACTION WHILE WAITING TO ATTACK OUTPOST */
+        for (let me of unassignedSpirits) { 
+            me.set_mark(`${marks.PREPARE}`)
         }
     }
 
@@ -260,6 +303,14 @@
             case marks.HARVESTING:
                 var {energizeTarget, movementPosition} = harvest(me, friends, markData, i);
                 break;
+            case marks.PREPARE:
+                if (me.energy < me.energy_capacity) {
+                    movementPosition = myStar.position
+                    energizeTarget = me
+                } else {
+                    me.shout('w')
+                    movementPosition = moveBetweenWithOffset(base.position, outpost.position, 120)
+                }
             default:
                 me.shout('⁉');
                 break;
