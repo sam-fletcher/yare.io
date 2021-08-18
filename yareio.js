@@ -45,6 +45,24 @@
     function distance(pos1, pos2) {
         return Math.sqrt(Math.pow(pos2[0] - pos1[0], 2) + Math.pow(pos2[1] - pos1[1], 2));
     }
+    function distanceSortWithTiebreaker(a, b, targ, targ2) {
+        let dist = distance(a.position, targ.position) - distance(b.position, targ.position)
+        if (Math.abs(dist) > speed) {
+            return dist;
+        }
+        dist = distance(a.position, targ2.position) - distance(b.position, targ2.position)
+        // if (Math.abs(dist) > speed) {
+            return dist;
+        // }
+        // let e = a.energy - b.energy
+        // if (e > 0) {
+        //     return e
+        // }
+        // if (a.last_energized == targ.id) {
+        //     return -1
+        // }
+        // return 1
+    }
     function sortDistance(from) {
         return (a, b) => distance(from.position, a.position) - distance(from.position, b.position);
     }
@@ -54,9 +72,9 @@
     function starGrowth(star) {
         // the goal is to let the star keep growing, but as slowly as possible.
         if (star.energy < 900) {
-            return 3 + Math.floor((star.energy) * 0.008);
+            return 2 + Math.floor((star.energy) * 0.01);
         }
-        return 3 + Math.floor((star.energy) * 0.01);
+        return 3 + Math.floor((star.energy) * 0.011);
     }
     function sizeReducer(total, spirit) {
         return spirit.size + total;
@@ -86,28 +104,47 @@
     }
     
     // MICRO FUNCTIONS
+    function prepare(me) {
+        let energizeTarget = me;
+        let movementPosition = undefined;
+        if (me.energy < me.energy_capacity) {
+            movementPosition = myStar.position
+            // energizeTarget = me
+        } else if (outpost.control == username) {
+        movementPosition = moveBetweenWithOffset(enemy_base.position, outpost.position, 379)
+        } else {
+            movementPosition = moveBetweenWithOffset(outpost.position, 
+                            base.position, outpost.range + speed + 1)
+        }
+        return {energizeTarget, movementPosition};
+    }
+    
     function fight(me, friends) {
         let energizeTarget = undefined;
         let movementPosition = undefined;
-        let cockiness = range - speed;
-        if (friends.filter((friend) => distance(friend.position, me.position) <= range / 2)
+        let cockiness = range-1 - speed*2; // assumes enemy is also moving towards us
+        if (friends.filter((friend) => distance(friend.position, me.position) <= speed*2)
                     .reduce(sizeReducer, me.size) > enemySize &&
                         me.energy >= me.energy_capacity / 2) {
-            cockiness = range + speed
+            cockiness = range+1 + speed
         }
         const enemies = me.sight.enemies
             .map((e) => spirits[e])
             .filter((e) => distance(me.position, e.position) <= cockiness)
             .sort(sortEnergy);
     
-        let target = findWeighted(enemies);
+        let target = findWeighted(enemies); // finds an enemy we're willing to attack
         if (me.energy > 0 && target) {
             movementPosition = moveBetweenWithOffset(target.position, me.position, range - speed);
             energizeTarget = target;
             me.shout('🔫');
         } else {
             energizeTarget = me
-            movementPosition = myStar.position;
+            if (distance(me.position, enemy_base.position) < distance(me.position, base.position)) {
+                movementPosition = outpost.position
+            } else {
+                movementPosition = myStar.position;
+            }
             me.shout('🦵');
         }
         return {energizeTarget, movementPosition};
@@ -187,8 +224,7 @@
     
     // MACRO FUNCTIONS
     function miningChain(unassignedSpirits, minedStar, targetBase) {
-        unassignedSpirits.sort((a, b) => 
-        distance(a.position, minedStar.position) - distance(b.position, minedStar.position));
+        unassignedSpirits.sort((a, b) => distanceSortWithTiebreaker(a, b, minedStar, targetBase));
 
         const starDistance = distance(targetBase.position, minedStar.position);
         const numCheckpoints = Math.floor(starDistance / 190);
@@ -196,8 +232,15 @@
         const starPower = starGrowth(minedStar);
         // the checkpoint closest to the star needs twice the miners
         var numMiners = (starPower * (numCheckpoints+1)) / size;
+        
         if (numMiners < numCheckpoints*2) {
             return
+        } else if (targetBase == outpost && outpost.control == username) {
+            // don't over-charge the outpost
+            numMiners = Math.min(numMiners, (1000-outpost.energy)/8)
+        } else if (targetBase == enemy_base) {
+            // use all remaining miners in the attack
+            numMiners = unassignedSpirits.length
         }
         const miners = unassignedSpirits.splice(0, numMiners);
         
@@ -240,41 +283,52 @@
             me.set_mark(`${marks.FIGHT}`);
             unassignedSpirits.splice(unassignedSpirits.indexOf(me), 1);
         }
-
-        if (outpost.energy < 700 && outpost.control != enemyUser 
-            && outpostStar.active_in < 25 && mySpritsCount > 20 ) {
-            /** DO OUTPOST PROACTIVELY*/
-            miningChain(unassignedSpirits, outpostStar, outpost)
-        }
-        /** MINE MY OWN STAR */
-        miningChain(unassignedSpirits, myStar, base)
         
-        if (outpost.control == enemyUser) {
+        if (base.sight.enemies.length*enemySize > 20) {
+            /** EMERGENCY */
+            for (let me of unassignedSpirits) { 
+                me.set_mark(`${marks.PREPARE}`)
+            }
+        }
+
+        if (outpost.control != enemyUser && !memory.attack) {
+            /** MINE MY OWN STAR */
+            miningChain(unassignedSpirits, myStar, base)
+            // outpost.energy < 700 && outpostStar.active_in < 25 && mySpritsCount > 20
+            // if (outpost.energy > 700) {
+            //     /** BONUS MINING OF THE OUTPOST */
+            //     miningChain(unassignedSpirits, outpostStar, base)
+            // }
+            /** CONTROL THE OUTPOST */
+            miningChain(unassignedSpirits, outpostStar, outpost)
+            if (outpost.energy > 800)  {
+                /** ATTACK IF THE OUTPOST IS READY */
+                console.log(`${unassignedSpirits.length} attackers`)
+                for (let me of unassignedSpirits) { 
+                    me.set_mark(`${marks.PREPARE}`)
+                }
+                if (unassignedSpirits.length > 100) {
+                    miningChain(unassignedSpirits, outpostStar, enemy_base)
+                }
+            }
+            memory.attack = false
+        } else {
             /** PREPARE TO ATTACK THE OUTPOST */
-            if (unassignedSpirits.length > outpost.energy/10
-                && memory.attack == false) {
+            if (!memory.attack) {
                 memory.attack = true
                 memory.attackTime = tick
             }
-            if (tick > memory.attackTime+30 && memory.attack
-                && unassignedSpirits.length <= outpost.energy/10) {
-                memory.attack = false
+            for (let me of unassignedSpirits) { 
+                me.set_mark(`${marks.PREPARE}`)
             }
-            console.log(`attack = ${memory.attack}`)
-            if (memory.attack) {
+            if (tick > memory.attackTime+20) {
                 while (unassignedSpirits.length > 0) {
                     miningChain(unassignedSpirits, outpostStar, outpost)
                 }
+                if (outpost.control == username && outpost.energy > 100) {
+                    memory.attack = false
+                }
             }
-        } else {
-            /** ATTACK WITH THE REMAINDER */
-            while (unassignedSpirits.length > 0) {
-                miningChain(unassignedSpirits, outpostStar, enemy_base)
-            }
-        }
-        /** DEFAULT HOLDING ACTION WHILE WAITING TO ATTACK OUTPOST */
-        for (let me of unassignedSpirits) { 
-            me.set_mark(`${marks.PREPARE}`)
         }
     }
 
@@ -298,13 +352,8 @@
                 var {energizeTarget, movementPosition} = harvest(me, friends, markData, i);
                 break;
             case marks.PREPARE:
-                if (me.energy < me.energy_capacity) {
-                    movementPosition = myStar.position
-                    energizeTarget = me
-                } else {
-                    me.shout('w')
-                    movementPosition = moveBetweenWithOffset(base.position, outpost.position, 120)
-                }
+                var {energizeTarget, movementPosition} = prepare(me);
+                break;
             default:
                 me.shout('⁉');
                 break;
