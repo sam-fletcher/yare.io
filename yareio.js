@@ -1,7 +1,8 @@
 {
     const allSpiritsCount = Object.values(spirits).filter((s) => s.hp).length;
     const mySpritsCount = my_spirits.filter((s) => s.hp).length;
-    console.log(`me: ${mySpritsCount}, them: ${allSpiritsCount - mySpritsCount}`);
+    const enemySpiritsCount = allSpiritsCount - mySpritsCount;
+    console.log(`me: ${mySpritsCount}, them: ${enemySpiritsCount}`);
 
     const username = base.id.substring(5);
     const enemyUser = enemy_base.id.substring(5);
@@ -111,10 +112,11 @@
             movementPosition = myStar.position
             // energizeTarget = me
         } else if (outpost.control == username) {
-        movementPosition = moveBetweenWithOffset(enemy_base.position, outpost.position, 379)
+            movementPosition = moveBetweenWithOffset(enemy_base.position, 
+                                            outpost.position, 379)
         } else {
             movementPosition = moveBetweenWithOffset(outpost.position, 
-                            base.position, outpost.range + speed + 1)
+                                    base.position, outpost.range + speed + 1)
         }
         return {energizeTarget, movementPosition};
     }
@@ -294,41 +296,39 @@
         if (outpost.control != enemyUser && !memory.attack) {
             /** MINE MY OWN STAR */
             miningChain(unassignedSpirits, myStar, base)
-            // outpost.energy < 700 && outpostStar.active_in < 25 && mySpritsCount > 20
-            // if (outpost.energy > 700) {
-            //     /** BONUS MINING OF THE OUTPOST */
-            //     miningChain(unassignedSpirits, outpostStar, base)
-            // }
+
             /** CONTROL THE OUTPOST */
             miningChain(unassignedSpirits, outpostStar, outpost)
+            
             if (outpost.energy > 800)  {
-                /** ATTACK IF THE OUTPOST IS READY */
-                console.log(`${unassignedSpirits.length} attackers`)
-                for (let me of unassignedSpirits) { 
-                    me.set_mark(`${marks.PREPARE}`)
-                }
-                if (unassignedSpirits.length > 100) {
+                if (unassignedSpirits.length > enemySpiritsCount*enemySize) {
+                    /** ATTACK WITH OVERWHELMING FORCE */
                     miningChain(unassignedSpirits, outpostStar, enemy_base)
                 }
             }
             memory.attack = false
         } else {
             /** PREPARE TO ATTACK THE OUTPOST */
-            if (!memory.attack) {
+            if (unassignedSpirits.length > outpost.energy/20
+                && memory.attack == false) {
                 memory.attack = true
                 memory.attackTime = tick
             }
-            for (let me of unassignedSpirits) { 
-                me.set_mark(`${marks.PREPARE}`)
+            if (tick > memory.attackTime+30 && memory.attack
+                && unassignedSpirits.length <= outpost.energy/10) {
+                memory.attack = false
             }
-            if (tick > memory.attackTime+20) {
+            console.log(`attack = ${memory.attack}`)
+            if (memory.attack) {
                 while (unassignedSpirits.length > 0) {
                     miningChain(unassignedSpirits, outpostStar, outpost)
                 }
-                if (outpost.control == username && outpost.energy > 100) {
-                    memory.attack = false
-                }
             }
+        }
+        /** DEFAULT HOLDING ACTION WHILE WAITING TO ATTACK */
+        console.log(`${unassignedSpirits.length} preparing`)
+        for (let me of unassignedSpirits) { 
+            me.set_mark(`${marks.PREPARE}`)
         }
     }
 
